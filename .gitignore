@@ -1,0 +1,22 @@
+# Virtual environments
+venv
+venv/
+flask-mongodb-app/venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# OS / Editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
