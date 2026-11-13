@@ -307,20 +307,62 @@ curl "$APP_URL/data"
    ```
 
 2. **Terminal 2: Generate HTTP load**
+   
+   **Method 1: In-Cluster Parallel Load Generator (Recommended for rapid HPA triggering)**
+   Runs 10 parallel worker pods directly inside Kubernetes to generate sustained traffic without host-to-VM network bridge bottlenecks:
    ```bash
-   # Run high-concurrency attack using vegeta (200 requests/sec for 120s)
-   echo "GET $APP_URL/" | vegeta attack -duration=120s -rate=200 | vegeta report
+   cat << 'EOF' | kubectl apply -f -
+   apiVersion: batch/v1
+   kind: Job
+   metadata:
+     name: load-generator
+   spec:
+     parallelism: 10
+     completions: 10
+     template:
+       spec:
+         containers:
+         - name: load-gen
+           image: busybox:1.28
+           command: ["/bin/sh", "-c"]
+           args:
+           - "for i in $(seq 1 30000); do wget -q -O- http://flask-service:5000/ > /dev/null; done"
+         restartPolicy: Never
+     backoffLimit: 1
+   EOF
+   ```
+
+   **Method 2: External Load via `vegeta` from your Host Machine**
+   Generates external client traffic over the Minikube NodePort bridge:
+   ```bash
+   export APP_URL=$(minikube service flask-service --url)
+   echo "GET $APP_URL/" | vegeta attack -duration=60s -rate=1200 -workers=30 | vegeta report
    ```
 
 3. **Observed Results:**
    - **Baseline:** HPA reports `CPU: 1%/70%`, `Replicas: 2`.
-   - **Under Load (T+45s):** CPU rises to `~135%/70%`. HPA triggers scale-up:
+   - **Under Load:** CPU rises to `> 70%` (peaking at `241%/70%`). HPA triggers automatic scale-up from 2 to 4, then to 5 replicas:
      ```text
-     flask-hpa   Deployment/flask-deployment   135%/70%   2         5         4
-     flask-hpa   Deployment/flask-deployment   110%/70%   2         5         5
+     NAME        REFERENCE                     TARGETS         MINPODS   MAXPODS   REPLICAS
+     flask-hpa   Deployment/flask-deployment   cpu: 122%/70%   2         5         4
+     flask-hpa   Deployment/flask-deployment   cpu: 241%/70%   2         5         5
      ```
-   - **Peak:** Application reaches maximum configured replicas (`5`).
-   - **Cooldown (Post-Attack):** CPU utilization drops to `0%`. Following Kubernetes default 5-minute stabilization window, HPA smoothly scales back down to `2` replicas without flapping.
+   - **Peak (5 Replicas Running):** All 5 replicas actively serve traffic and share the CPU load:
+     ```text
+     NAME                                READY   STATUS    RESTARTS   AGE
+     flask-deployment-64f5cc945d-5nw5n   1/1     Running   0          18m
+     flask-deployment-64f5cc945d-bdq6r   1/1     Running   0          99s
+     flask-deployment-64f5cc945d-bj44c   1/1     Running   0          99s
+     flask-deployment-64f5cc945d-m9llq   1/1     Running   0          39s
+     flask-deployment-64f5cc945d-zw99r   1/1     Running   0          18m
+     ```
+   - **Cooldown (Post-Attack):** CPU utilization drops to `< 5%`. Following Kubernetes default 5-minute stabilization window, HPA smoothly scales back down to `2` replicas without thrashing.
+
+#### Autoscaling Verification Screenshots
+
+| Peak Load: HPA Scales to 5 Replicas | Post-Attack Cooldown: HPA Scales Back to 2 |
+| :---: | :---: |
+| ![HPA Peak Scale-up](docs/screenshots/hpa-scaled-5-replicas.png) | ![HPA Cooldown](docs/screenshots/hpa-cooldown.png) |
 
 ---
 
