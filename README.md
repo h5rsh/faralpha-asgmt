@@ -269,11 +269,11 @@ In Kubernetes, resource constraints control how pods are scheduled and prevent n
 
 ```bash
 # 1. Attempt unauthenticated query (Expected: Unauthorized failure)
-kubectl exec -it mongodb-0 -- mongosh --eval "db.getSiblingDB('flask_db').data.find()"
+kubectl exec -it mongodb-statefulset-0 -- mongosh --eval "db.getSiblingDB('flask_db').data.find()"
 # Result: Error: command find requires authentication
 
 # 2. Query with valid root credentials from secret (Expected: Success)
-kubectl exec -it mongodb-0 -- mongosh -u flaskuser -p SuperStrongPassword123 \
+kubectl exec -it mongodb-statefulset-0 -- mongosh -u flaskuser -p SuperStrongPassword123 \
   --authenticationDatabase admin --eval "db.getSiblingDB('flask_db').data.find()"
 # Result: Successfully outputs inserted documents
 ```
@@ -288,10 +288,10 @@ curl -X POST -H "Content-Type: application/json" \
   "$APP_URL/data"
 
 # 2. Simulate node failure or container crash by forcefully deleting the pod
-kubectl delete pod mongodb-0
+kubectl delete pod mongodb-statefulset-0
 
 # 3. Wait for StatefulSet controller to recreate the pod
-kubectl wait --for=condition=ready pod/mongodb-0 --timeout=60s
+kubectl wait --for=condition=ready pod/mongodb-statefulset-0 --timeout=60s
 
 # 4. Query the API again
 curl "$APP_URL/data"
